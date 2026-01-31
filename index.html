@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wiki Glass Explorer v3.5</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        :root {
+            /* === СВЕТЛАЯ ТЕМА === */
+            --glass-bg: rgba(255, 255, 255, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --glass-blur: 20px;
+            --text-color: #000;
+            --secondary-text: #555;
+            --accent-color: #007aff;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            
+            /* Маркеры (Светлые) */
+            --pin-bg: #007aff;          /* Синий центр */
+            --pin-border: #ffffff;      /* Белая обводка */
+            --pin-shadow: rgba(0,0,0,0.3);
+            --pin-dot: #ffffff;         /* Белая точка внутри */
+        }
+
+        body.dark-mode {
+            /* === ТЕМНАЯ ТЕМА === */
+            --glass-bg: rgba(25, 25, 25, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-color: #fff;
+            --secondary-text: #aaa;
+            --accent-color: #0a84ff;
+            --card-bg: rgba(35, 35, 35, 0.95);
+            
+            /* Маркеры (Темные) */
+            --pin-bg: #0a84ff;          /* Ярко-синий неон */
+            --pin-border: #2a2a2a;      /* Темная обводка под цвет карты */
+            --pin-shadow: #000000;
+            --pin-dot: #1a1a1a;         /* Темная точка внутри */
+        }
+
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, sans-serif; overflow: hidden; background: #111; }
+        #map { width: 100%; height: 100vh; z-index: 1; background: #222; }
+
+        /* Панели */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+
+        .ui-panel { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; padding: 10px 24px; text-align: center; }
+        h1 { margin: 0; font-size: 16px; font-weight: 600; }
+        #status { margin: 2px 0 0; font-size: 11px; color: var(--secondary-text); }
+
+        .settings-btn { position: absolute; top: 20px; right: 20px; z-index: 1001; width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; }
+        
+        .settings-menu { position: absolute; top: 70px; right: 20px; z-index: 1001; width: 200px; padding: 16px; display: none; flex-direction: column; gap: 12px; }
+        .settings-menu.active { display: flex; }
+        
+        .switch-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(120,120,120,0.3); transition: .3s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent-color); }
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        .search-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 8px; padding: 8px; width: 90%; max-width: 400px; }
+        input#addressInput { flex: 1; padding: 10px 16px; border: none; border-radius: 10px; outline: none; background: rgba(128,128,128,0.1); color: var(--text-color); }
+        button#searchBtn { padding: 0 20px; background: var(--accent-color); color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; }
+
+        /* === ДИЗАЙН МАРКЕРОВ === */
+        .custom-pin-container { background: transparent; border: none; }
+        
+        .modern-pin {
+            width: 30px; 
+            height: 30px;
+            background: var(--pin-bg);
+            border: 2px solid var(--pin-border); /* Цвет меняется от темы */
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            box-shadow: 0 4px 10px var(--pin-shadow);
+            position: relative;
+            transition: all 0.3s ease; /* Плавная смена цвета при переключении темы */
+        }
+        
+        .modern-pin::after {
+            content: '';
+            position: absolute;
+            width: 8px; height: 8px;
+            background: var(--pin-dot); /* Цвет точки меняется */
+            border-radius: 50%;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .modern-pin:hover { transform: rotate(-45deg) scale(1.15); z-index: 9999; }
+        
+        .modern-pin.red { background: #ff3b30; }
+
+        /* Попапы */
+        .leaflet-popup-content-wrapper { background: var(--card-bg) !important; border-radius: 14px !important; color: var(--text-color) !important; padding: 0; }
+        .leaflet-popup-content { margin: 14px !important; width: 240px !important; }
+        .leaflet-container a.leaflet-popup-close-button { color: var(--secondary-text) !important; font: 16px/14px Tahoma, Verdana, sans-serif !important; }
+        
+        .wiki-card b { font-size: 15px; display: block; margin-bottom: 6px; }
+        .wiki-card img { width: 100%; border-radius: 8px; margin: 6px 0; object-fit: cover; height: 120px; background: #333; }
+        .wiki-card p { font-size: 12px; color: var(--secondary-text); margin: 6px 0 10px 0; }
+        .nav-buttons { display: flex; gap: 8px; }
+        .nav-btn { flex: 1; text-align: center; padding: 6px 0; border-radius: 6px; text-decoration: none; color: var(--text-color) !important; font-size: 11px; background: rgba(128,128,128,0.1); }
+    </style>
+</head>
+<body class="dark-mode">
+
+    <div class="ui-panel glass-panel">
+        <h1>WikiMap</h1>
+        <p id="status">Загрузка...</p>
+    </div>
+
+    <div class="settings-btn glass-panel" id="settingsBtn">⚙️</div>
+
+    <div class="settings-menu glass-panel" id="settingsMenu">
+        <div class="switch-row">
+            <span>Темная тема</span>
+            <label class="switch">
+                <input type="checkbox" id="themeToggle" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="switch-row">
+            <span>Кастомные маркеры</span>
+            <label class="switch">
+                <input type="checkbox" id="markerToggle" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="search-container glass-panel">
+        <input type="text" id="addressInput" placeholder="Поиск места...">
+        <button id="searchBtn">Найти</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const SECRET_COORDS = [51.75810056859349, 94.42424171433673];
+        const lightTile = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        const darkTile = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+        let isDarkMode = true;
+        let useCustomMarkers = true;
+        let moveTimeout;
+
+        // Инициализация карты + ОТКЛЮЧЕНИЕ АТРИБУЦИИ
+        const map = L.map('map', { 
+            zoomControl: false, 
+            attributionControl: false // <--- Вот эта строчка убирает копирайт
+        }).setView([55.7558, 37.6173], 10);
+        
+        let currentTileLayer = L.tileLayer(darkTile, { maxZoom: 19 }).addTo(map);
+
+        const markersGroup = L.layerGroup().addTo(map);
+        const secretGroup = L.layerGroup().addTo(map);
+        const statusText = document.getElementById('status');
+        const settingsMenu = document.getElementById('settingsMenu');
+
+        function getIcon(isSecret = false) {
+            if (useCustomMarkers) {
+                const colorClass = isSecret ? 'red' : '';
+                return L.divIcon({
+                    className: 'custom-pin-container',
+                    html: `<div class="modern-pin ${colorClass}"></div>`, // CSS сам решит, какой цвет использовать
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 30],
+                    popupAnchor: [0, -32]
+                });
+            }
+            return new L.Icon.Default();
+        }
+
+        async function getWikiData(lat, lng) {
+            if (map.getZoom() < 11) {
+                statusText.innerText = "Приблизьте карту (Zoom 11+)";
+                markersGroup.clearLayers();
+                return;
+            }
+
+            statusText.innerText = "Поиск...";
+            markersGroup.clearLayers();
+
+            const dist = Math.sqrt(Math.pow(lat - SECRET_COORDS[0], 2) + Math.pow(lng - SECRET_COORDS[1], 2));
+            if (dist < 0.05) {
+                if (secretGroup.getLayers().length === 0) {
+                    L.marker(SECRET_COORDS, { icon: getIcon(true) })
+                        .addTo(secretGroup)
+                        .bindPopup(`<div class="wiki-card"><b>Секретная зона</b><p style="color:#ff3b30">Доступ запрещен.</p></div>`);
+                }
+            }
+
+            try {
+                const url = `https://ru.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=geosearch&ggscoord=${lat}|${lng}&ggsradius=10000&ggslimit=15&prop=coordinates|pageimages|extracts&piprop=thumbnail&pithumbsize=300&exintro=1&explaintext=1&exchars=150`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.query && data.query.pages) {
+                    const pages = Object.values(data.query.pages);
+                    pages.forEach(page => {
+                        if (!page.coordinates || !page.coordinates[0]) return;
+
+                        const pLat = page.coordinates[0].lat;
+                        const pLon = page.coordinates[0].lon;
+                        const yandex = `https://yandex.ru/maps/?ll=${pLon},${pLat}&z=16&l=map`;
+                        const google = `https://www.google.com/maps?q=${pLat},${pLon}`;
+
+                        L.marker([pLat, pLon], { icon: getIcon(false) })
+                            .addTo(markersGroup)
+                            .bindPopup(`
+                                <div class="wiki-card">
+                                    <b>${page.title}</b>
+                                    ${page.thumbnail ? `<img src="${page.thumbnail.source}">` : ''}
+                                    <p>${page.extract || 'Нет описания.'}</p>
+                                    <div class="nav-buttons">
+                                        <a href="${yandex}" target="_blank" class="nav-btn">Яндекс</a>
+                                        <a href="${google}" target="_blank" class="nav-btn">Google</a>
+                                    </div>
+                                </div>
+                            `);
+                    });
+                    statusText.innerText = `Найдено: ${pages.length}`;
+                } else {
+                    statusText.innerText = "Пусто";
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function searchAddress() {
+            const query = document.getElementById('addressInput').value.trim();
+            if (!query) return;
+            if (query.toLowerCase().includes("магнитошахтинск")) {
+                map.setView(SECRET_COORDS, 13);
+                getWikiData(SECRET_COORDS[0], SECRET_COORDS[1]);
+                return;
+            }
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                if (data.length > 0) {
+                    const { lat, lon } = data[0];
+                    map.setView([lat, lon], 13);
+                    getWikiData(lat, lon);
+                }
+            } catch (e) {}
+        }
+
+        document.getElementById('settingsBtn').onclick = (e) => { e.stopPropagation(); settingsMenu.classList.toggle('active'); };
+        
+        document.getElementById('themeToggle').onchange = (e) => {
+            isDarkMode = e.target.checked;
+            document.body.classList.toggle('dark-mode', isDarkMode);
+            map.removeLayer(currentTileLayer);
+            currentTileLayer = L.tileLayer(isDarkMode ? darkTile : lightTile, { maxZoom: 19 }).addTo(map);
+        };
+
+        document.getElementById('markerToggle').onchange = (e) => {
+            useCustomMarkers = e.target.checked;
+            getWikiData(map.getCenter().lat, map.getCenter().lng);
+        };
+
+        map.on('click', (e) => { settingsMenu.classList.remove('active'); getWikiData(e.latlng.lat, e.latlng.lng); });
+        document.getElementById('searchBtn').onclick = searchAddress;
+        document.getElementById('addressInput').onkeypress = (e) => { if (e.key === 'Enter') searchAddress(); };
+        map.on('moveend', () => { clearTimeout(moveTimeout); moveTimeout = setTimeout(() => { getWikiData(map.getCenter().lat, map.getCenter().lng); }, 800); });
+        
+        statusText.innerText = "Готов";
+    </script>
+</body>
+</html>
