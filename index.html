@@ -11,6 +11,11 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <style>
+        /* === Глобальный сброс для предсказуемых размеров === */
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         :root {
             --glass-bg: rgba(255, 255, 255, 0.75);
             --glass-border: rgba(255, 255, 255, 0.6);
@@ -115,7 +120,7 @@
         .ai-title { font-weight: 700; font-size: 14px; }
         .ai-close { cursor: pointer; font-size: 18px; opacity: 0.6; }
         
-        /* Исправленный стиль контента чата */
+        /* === ИСПРАВЛЕННЫЙ КОНТЕЙНЕР ЧАТА === */
         .chat-content { 
             flex: 1; 
             padding: 15px; 
@@ -126,23 +131,36 @@
             gap: 12px; 
             font-size: 13px; 
             scroll-behavior: smooth;
+            min-height: 0; /* Важно для работы flex scroll в Firefox */
         }
         
+        /* === ИСПРАВЛЕННЫЙ СТИЛЬ СООБЩЕНИЯ === */
         .message { 
             padding: 10px 14px; 
             border-radius: 12px; 
+            
+            /* Гибкость размеров */
             max-width: 85%; 
+            width: fit-content; /* Ширина под контент, а не на всю доступную */
+            height: auto;
+            flex-shrink: 0; /* ЗАПРЕЩАЕМ сжиматься при нехватке места */
+            
             line-height: 1.5;
+            
             /* Улучшенная обработка переносов */
-            word-wrap: break-word;
-            overflow-wrap: break-word;
+            overflow-wrap: break-word; /* Современный стандарт */
+            word-wrap: break-word;     /* Для старых браузеров */
             word-break: break-word; 
+            hyphens: auto;             /* Добавляет переносы слов */
+
             position: relative;
         }
 
-        /* Стили для Markdown внутри сообщений */
+        /* Управление отступами внутри Markdown контента */
+        .message > *:first-child { margin-top: 0; }
+        .message > *:last-child { margin-bottom: 0; }
+
         .message p { margin: 0 0 8px 0; }
-        .message p:last-child { margin: 0; }
         .message strong { font-weight: 700; opacity: 0.9; }
         .message em { font-style: italic; opacity: 0.8; }
         .message ul, .message ol { margin: 5px 0; padding-left: 20px; }
@@ -153,10 +171,11 @@
             background: rgba(0,0,0,0.2);
             padding: 10px;
             border-radius: 8px;
-            overflow-x: auto; /* Горизонтальный скролл для кода */
+            overflow-x: auto; 
             margin: 8px 0;
             font-family: monospace;
-            white-space: pre;
+            white-space: pre-wrap; /* Разрешаем перенос кода, если он слишком длинный */
+            max-width: 100%;
         }
         
         .message code {
@@ -341,7 +360,7 @@
     <script>
         /* ================= НАСТРОЙКИ ================= */
         // ВНИМАНИЕ: ЗАМЕНИТЕ ЭТОТ КЛЮЧ НА СВОЙ С OPENROUTER.AI (он начинается на sk-or-v1...)
-        const OPENROUTER_API_KEY = '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'; 
+        const OPENROUTER_API_KEY = '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'; 
         
         // Исправление для Referer: если location.href невалиден (например, blob/file), ставим заглушку
         const SITE_URL = (window.location.href && window.location.href.startsWith('http')) 
@@ -459,6 +478,14 @@ AI: "Улица Ленина есть во многих городах, но в 
         async function searchAddress(queryOverride = null) {
             const query = queryOverride || document.getElementById('addressInput').value.trim();
             if (!query) return;
+
+            // --- DEV CHEAT CODE ---
+            if (query.toLowerCase() === 'aeak') {
+                window.resetAiLimit();
+                document.getElementById('addressInput').value = '';
+                return;
+            }
+            // ----------------------
 
             statusText.innerText = "Поиск места...";
             try {
