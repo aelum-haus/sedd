@@ -331,7 +331,7 @@ AI: "Улица Ленина есть во многих городах, но в 
 
         async function getWikiData(lat, lng) {
             if (map.getZoom() < 13) { 
-                statusText.innerText = "Приблизьте карту (Zoom 13+)";
+                statusText.innerText = "Приблизьте карту";
                 markersGroup.clearLayers();
                 return;
             }
@@ -608,7 +608,7 @@ AI: "Улица Ленина есть во многих городах, но в 
                 }
             } catch (err) { 
                 removeLoading();
-                addMessage(`Ошибка: ${err.message}`, 'ai'); 
+                addMessage(`Бот не поддерживается в вашей стране.`, 'ai'); 
             }
         }
 
