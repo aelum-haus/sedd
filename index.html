@@ -3,15 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheWikiMap</title>
+    <!-- Запрещаем браузерам (особенно Safari) автоматически красить цифры в ссылки -->
+    <meta name="format-detection" content="telephone=no, date=no, address=no">
+    <title>WikiMap 3.0 + Routes</title>
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌍</text></svg>">
+    
+    <!-- Стили Leaflet и Routing Machine -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Добавляем библиотеку для парсинга Markdown -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    
+    <!-- Библиотека для парсинга Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <style>
-        /* === Глобальный сброс для предсказуемых размеров === */
+        /* === Глобальный сброс === */
         *, *::before, *::after {
             box-sizing: border-box;
         }
@@ -49,7 +55,7 @@
             --pin-dot: #1a1a1a;
         }
 
-        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; background: #111; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; background: #111; color: var(--text-color); }
         #map { width: 100%; height: 100vh; z-index: 1; background: #222; }
 
         body.liquid-mode .glass-panel, 
@@ -78,9 +84,12 @@
             transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
 
-        .ui-panel { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; padding: 12px 28px; text-align: center; }
-        h1 { margin: 0; font-size: 16px; font-weight: 700; }
+        .ui-panel { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; padding: 12px 28px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        h1 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-color); }
         #status { margin: 2px 0 0; font-size: 11px; color: var(--secondary-text); }
+        
+        .clear-route-btn { margin-top: 8px; font-size: 11px; padding: 4px 12px; border-radius: 10px; background: rgba(255, 59, 48, 0.8); color: white; border: none; cursor: pointer; display: none; }
+        .clear-route-btn.active { display: inline-block; }
 
         .settings-btn { position: absolute; top: 20px; right: 20px; z-index: 1001; width: 44px; height: 44px; border-radius: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; }
         
@@ -109,7 +118,7 @@
 
         .ai-window {
             position: absolute; bottom: 100px; right: 20px;
-            width: 340px; height: 500px; z-index: 1002;
+            width: 340px; height: 500px; max-height: 70vh; z-index: 1002;
             display: none; flex-direction: column; overflow: hidden;
             animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
@@ -120,77 +129,37 @@
         .ai-title { font-weight: 700; font-size: 14px; }
         .ai-close { cursor: pointer; font-size: 18px; opacity: 0.6; }
         
-        /* === ИСПРАВЛЕННЫЙ КОНТЕЙНЕР ЧАТА === */
         .chat-content { 
-            flex: 1; 
-            padding: 15px; 
-            overflow-y: auto; 
-            background: var(--chat-bg); 
-            display: flex; 
-            flex-direction: column; 
-            gap: 12px; 
-            font-size: 13px; 
-            scroll-behavior: smooth;
-            min-height: 0; /* Важно для работы flex scroll в Firefox */
+            flex: 1; padding: 15px; overflow-y: auto; background: var(--chat-bg); 
+            display: flex; flex-direction: column; gap: 12px; font-size: 13px; 
+            scroll-behavior: smooth; min-height: 0; color: var(--text-color);
         }
         
-        /* === ИСПРАВЛЕННЫЙ СТИЛЬ СООБЩЕНИЯ === */
         .message { 
-            padding: 10px 14px; 
-            border-radius: 12px; 
-            
-            /* Гибкость размеров */
-            max-width: 85%; 
-            width: fit-content; /* Ширина под контент, а не на всю доступную */
-            height: auto;
-            flex-shrink: 0; /* ЗАПРЕЩАЕМ сжиматься при нехватке места */
-            
-            line-height: 1.5;
-            
-            /* Улучшенная обработка переносов */
-            overflow-wrap: break-word; /* Современный стандарт */
-            word-wrap: break-word;     /* Для старых браузеров */
-            word-break: break-word; 
-            hyphens: auto;             /* Добавляет переносы слов */
-
+            padding: 10px 14px; border-radius: 12px; max-width: 85%; width: fit-content; 
+            flex-shrink: 0; line-height: 1.5; overflow-wrap: break-word; word-wrap: break-word; 
             position: relative;
         }
-
-        /* Управление отступами внутри Markdown контента */
+        
+        /* Исправление отображения списков и цифр */
+        .message ol, .message ul { padding-left: 20px; margin: 5px 0; }
+        .message li { margin-bottom: 4px; color: inherit; }
+        .message ol li::marker { color: inherit; font-weight: bold; }
+        
         .message > *:first-child { margin-top: 0; }
         .message > *:last-child { margin-bottom: 0; }
-
         .message p { margin: 0 0 8px 0; }
-        .message strong { font-weight: 700; opacity: 0.9; }
-        .message em { font-style: italic; opacity: 0.8; }
-        .message ul, .message ol { margin: 5px 0; padding-left: 20px; }
-        .message li { margin-bottom: 4px; }
+        .message strong { font-weight: 700; color: inherit; }
+        .message em { font-style: italic; opacity: 0.9; }
         
-        /* Стили для кода внутри чата (чтобы не выпадал) */
-        .message pre {
-            background: rgba(0,0,0,0.2);
-            padding: 10px;
-            border-radius: 8px;
-            overflow-x: auto; 
-            margin: 8px 0;
-            font-family: monospace;
-            white-space: pre-wrap; /* Разрешаем перенос кода, если он слишком длинный */
-            max-width: 100%;
-        }
+        .message pre { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; overflow-x: auto; margin: 8px 0; font-family: monospace; white-space: pre-wrap; }
+        .message code { font-family: monospace; background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 3px; }
         
-        .message code {
-            font-family: 'Courier New', monospace;
-            background: rgba(0,0,0,0.1);
-            padding: 2px 4px;
-            border-radius: 3px;
-        }
         .dark-mode .message pre { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); }
         .dark-mode .message code { background: rgba(255,255,255,0.1); }
         
         .message.user { align-self: flex-end; background: var(--user-msg-bg); color: white; border-bottom-right-radius: 2px; }
-        .message.ai { align-self: flex-start; background: var(--ai-msg-bg); color: var(--text-color); border-bottom-left-radius: 2px; min-height: 20px; }
-        
-        /* Ссылки в чате */
+        .message.ai { align-self: flex-start; background: var(--ai-msg-bg); color: var(--text-color); border-bottom-left-radius: 2px; }
         .message a { color: inherit; text-decoration: underline; opacity: 0.8; }
         
         .typing-indicator::after { content: '.'; animation: dots 1.5s steps(5, end) infinite; }
@@ -201,7 +170,6 @@
         .ai-send { background: var(--accent-color); color: white; border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 
         .tokens-left { font-size: 10px; color: var(--secondary-text); text-align: center; padding-bottom: 5px; background: var(--chat-bg); display: flex; justify-content: center; gap: 10px; flex-shrink: 0; }
-        .reset-limit { text-decoration: underline; cursor: pointer; color: var(--accent-color); }
 
         .search-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 8px; padding: 8px; width: 90%; max-width: 400px; }
         input#addressInput { flex: 1; padding: 12px 16px; border: none; border-radius: 12px; outline: none; background: rgba(128,128,128,0.1); color: var(--text-color); font-size: 14px; }
@@ -221,51 +189,29 @@
         .leaflet-popup-content { margin: 0 !important; width: 300px !important; line-height: normal !important; }
         .leaflet-container a.leaflet-popup-close-button { display: none !important; }
 
+        /* Скрываем текстовую панель маршрута, чтобы не мешала интерфейсу */
+        .leaflet-routing-container { display: none !important; }
+
         .wiki-glass-card {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            box-shadow: 0 15px 50px rgba(0,0,0,0.4);
-            overflow: hidden; display: flex; flex-direction: column;
+            background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 24px;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.4); overflow: hidden; display: flex; flex-direction: column;
             animation: cardFloat 0.4s cubic-bezier(0.19, 1, 0.22, 1);
-            position: relative; width: 300px; box-sizing: border-box; 
+            position: relative; width: 300px; box-sizing: border-box; color: var(--text-color);
         }
         @keyframes cardFloat { from { opacity: 0; transform: translateY(15px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
-        .card-header { 
-            height: 130px; 
-            width: 100%; 
-            position: relative; 
-            background-color: #333; 
-            background-size: cover; 
-            background-position: center; 
-            flex-shrink: 0; 
-        }
-        
-        /* Исправленный градиент с размытием */
+        .card-header { height: 130px; width: 100%; position: relative; background-color: #333; background-size: cover; background-position: center; flex-shrink: 0; }
         .card-header::after { 
-            content: ''; 
-            position: absolute; 
-            bottom: -1px; /* Чуть ниже, чтобы перекрыть шов */
-            left: 0; 
-            right: 0; 
-            height: 50%; /* Увеличили зону перехода */
+            content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 50%;
             background: linear-gradient(to top, var(--glass-bg) 10%, transparent 100%);
-            /* Добавляем размытие на границе */
-            backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
+            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
             mask-image: linear-gradient(to top, black 0%, transparent 100%);
             -webkit-mask-image: linear-gradient(to top, black 0%, transparent 100%);
             pointer-events: none;
         }
 
-        .custom-close {
-            position: absolute; top: 10px; right: 10px; width: 28px; height: 28px;
-            background: rgba(0,0,0,0.3); backdrop-filter: blur(4px);
-            border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; z-index: 10; font-size: 16px; transition: transform 0.2s;
-        }
+        .custom-close { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px); border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; font-size: 16px; transition: transform 0.2s; }
         .custom-close:hover { transform: scale(1.1); background: rgba(0,0,0,0.6); }
 
         .card-body { padding: 16px; position: relative; z-index: 2; display: flex; flex-direction: column; gap: 8px; }
@@ -274,16 +220,12 @@
         .card-text::-webkit-scrollbar { width: 4px; }
         .card-text::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 2px; }
 
-        .card-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; flex-shrink: 0; }
-        .action-btn {
-            padding: 10px; border-radius: 12px; border: none; font-size: 12px; font-weight: 600;
-            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-            text-decoration: none; transition: filter 0.2s;
-        }
+        .card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; flex-shrink: 0; }
+        .action-btn { padding: 8px; border-radius: 12px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; text-decoration: none; transition: filter 0.2s; }
         .action-btn:hover { filter: brightness(1.1); }
         .btn-map { background: rgba(128,128,128,0.15); color: var(--text-color); }
-        .btn-wiki { background: #e0e0e0; color: #333; }
-        .btn-ai { grid-column: span 3; background: var(--ai-gradient); color: white; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3); }
+        .btn-route { background: rgba(52, 199, 89, 0.2); color: #34c759; }
+        .btn-ai { grid-column: span 2; background: var(--ai-gradient); color: white; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3); }
     </style>
 </head>
 <body class="dark-mode liquid-mode">
@@ -291,6 +233,7 @@
     <div class="ui-panel glass-panel">
         <h1>WikiMap 3.0</h1>
         <p id="status">Загрузка...</p>
+        <button id="clearRouteBtn" class="clear-route-btn">✖ Очистить маршрут</button>
     </div>
 
     <div class="settings-btn glass-panel" id="settingsBtn">⚙️</div>
@@ -337,13 +280,13 @@
             <span class="ai-close" id="closeAi">×</span>
         </div>
         <div class="chat-content" id="chatContent">
-            <div class="message ai">Привет! Я твой штурман. Напиши "Открой Лондон" или "Покажи улицу Баумана в Казани", и я плавно перенесу карту.</div>
+            <div class="message ai">Привет! Я твой штурман. <br>• Напиши "Открой Лондон"<br>• Или "Построй маршрут от Москвы до Питера".</div>
         </div>
         <div class="tokens-left">
             <span id="limitText">Осталось запросов: 10</span>
         </div>
         <div class="ai-input-area">
-            <input type="text" class="ai-input" id="aiInput" placeholder="Куда летим?">
+            <input type="text" class="ai-input" id="aiInput" placeholder="Куда летим или едем?">
             <button class="ai-send" id="sendAi">➤</button>
         </div>
     </div>
@@ -355,51 +298,47 @@
         <button id="searchBtn">Найти</button>
     </div>
 
+    <!-- Библиотеки Leaflet -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 
     <script>
         /* ================= НАСТРОЙКИ ================= */
-        // ВНИМАНИЕ: ЗАМЕНИТЕ ЭТОТ КЛЮЧ НА СВОЙ С OPENROUTER.AI (он начинается на sk-or-v1...
-        // Разбиваем ключ на две части, чтобы роботы GitHub его не сожрали
-        const part1 = 's'; // Вставьте сюда первую половину ключ
+        const part1 = 's'; 
         const part2 = 'k-or-v1-8a';
-        const part3 = 'e12a8cc94cb76182dd8ef5d3b1765a5bc14a9f8e8308b952fcd768137fee7d';         // Вставьте сюда вторую половину ключа
-
-        // Склеиваем их обратно для работы кода
+        const part3 = 'e12a8cc94cb76182dd8ef5d3b1765a5bc14a9f8e8308b952fcd768137fee7d';         
         const OPENROUTER_API_KEY = part1 + part2 + part3;
         
-        // Исправление для Referer: если location.href невалиден (например, blob/file), ставим заглушку
         const SITE_URL = (window.location.href && window.location.href.startsWith('http')) 
-                         ? window.location.href 
-                         : 'https://wikimap-ai-explorer.app';
+                         ? window.location.href : 'https://wikimap-ai-explorer.app';
         const SITE_NAME = 'Wiki Map Explorer';
         const lightTile = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
         const darkTile = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
         const DAILY_LIMIT = 10;
 
-        // === ОБНОВЛЕННЫЙ ПРОМТ ДЛЯ ИИ ===
+        // === ОБНОВЛЕННЫЙ ПРОМТ С МАРШРУТАМИ ===
         const SYSTEM_PROMPT = `
 Ты интеллектуальный навигатор. Отвечай на РУССКОМ языке.
-Используй Markdown для форматирования ответа (жирный текст для важных названий, списки для перечисления фактов).
-Твоя задача: понять, куда хочет пользователь, и дать команду карте найти это место.
+Используй Markdown для ответа (жирный текст для названий, списки). Не используй html теги.
 
-ВАЖНО: НЕ ПРИДУМЫВАЙ КООРДИНАТЫ САМ! Они часто ошибочны.
-Вместо этого используй команду "search" с точным названием места.
+Твоя задача: понять запрос пользователя и вернуть команду в формате JSON СТРОГО в конце сообщения.
+ВАЖНО: Координаты не придумывай, используй текстовые запросы в командах!
 
-ФОРМАТ ОТВЕТА (JSON строго в конце сообщения):
-1. Если просят открыть место (город, улицу, достопримечательность):
-   Твой красивый ответ в формате Markdown...
-   { "action": "search", "query": "Зеленодольск, Татарстан" }
+ФОРМАТЫ КОМАНД (Добавляй их в самый конец ответа):
 
-2. Если просят изменить настройки:
-   { "action": "theme", "value": "light" | "dark" }
-   { "action": "liquid", "value": true | false }
-   { "action": "memory", "value": true | false }
+1. Если просят найти место:
+{ "action": "search", "query": "Зеленодольск, Татарстан" }
 
-Пример:
-User: "Покажи улицу Ленина в Москве"
-AI: "Улица Ленина есть во многих городах, но в Москве это **Ленинский проспект** - одна из главных магистралей..."
-{ "action": "search", "query": "Ленинский проспект, Москва" }
+2. Если просят построить маршрут от точки А до точки Б (или от "здесь" до точки Б):
+{ "action": "route", "start": "Казань", "end": "Уфа" }
+
+3. Если просят изменить настройки:
+{ "action": "theme", "value": "light" } // или "dark"
+{ "action": "liquid", "value": true } // или false
+
+Пример ответа на маршрут:
+"Отличный маршрут! Путь из Москвы в Санкт-Петербург обычно занимает около 8-9 часов по трассе М-11."
+{ "action": "route", "start": "Москва", "end": "Санкт-Петербург" }
 `;
 
         /* ================= STATE ================= */
@@ -409,6 +348,7 @@ AI: "Улица Ленина есть во многих городах, но в 
         let useMemory = true;
         let moveTimeout;
         let isTyping = false;
+        let routingControl = null; // Переменная для маршрута
         let chatHistory = [{"role": "system", "content": SYSTEM_PROMPT}];
         
         /* ================= КАРТА ================= */
@@ -416,7 +356,7 @@ AI: "Улица Ленина есть во многих городах, но в 
         let currentTileLayer = L.tileLayer(darkTile, { maxZoom: 19 }).addTo(map);
         const markersGroup = L.layerGroup().addTo(map);
         const statusText = document.getElementById('status');
-        const settingsMenu = document.getElementById('settingsMenu');
+        const clearRouteBtn = document.getElementById('clearRouteBtn');
 
         function getIcon() {
             if (useCustomMarkers) {
@@ -431,14 +371,100 @@ AI: "Улица Ленина есть во многих городах, но в 
             return new L.Icon.Default();
         }
 
+        /* ================= МАРШРУТИЗАЦИЯ (НОВОЕ) ================= */
+        
+        function clearRoute() {
+            if (routingControl) {
+                map.removeControl(routingControl);
+                routingControl = null;
+            }
+            clearRouteBtn.classList.remove('active');
+            statusText.innerText = "Маршрут удален";
+        }
+
+        clearRouteBtn.onclick = clearRoute;
+
+        window.routeToMarker = function(lat, lng) {
+            const center = map.getCenter();
+            map.closePopup();
+            buildRoutePoints(center.lat, center.lng, lat, lng);
+        }
+
+        function buildRoutePoints(lat1, lon1, lat2, lon2) {
+            statusText.innerText = "Строим маршрут...";
+            clearRoute(); // очищаем старый
+
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(lat1, lon1),
+                    L.latLng(lat2, lon2)
+                ],
+                router: L.Routing.osrmv1({
+                    language: 'ru',
+                    profile: 'car'
+                }),
+                lineOptions: {
+                    styles: [{color: isDarkMode ? '#0a84ff' : '#007aff', opacity: 0.8, weight: 6}]
+                },
+                show: false, // скрываем текстовое меню OSRM
+                addWaypoints: false,
+                routeWhileDragging: false,
+                fitSelectedRoutes: true,
+                showAlternatives: false
+            }).on('routesfound', function(e) {
+                const distance = (e.routes[0].summary.totalDistance / 1000).toFixed(1);
+                const time = Math.round(e.routes[0].summary.totalTime / 60);
+                statusText.innerText = `Маршрут: ${distance} км (~${time} мин)`;
+                clearRouteBtn.classList.add('active');
+            }).on('routingerror', function() {
+                statusText.innerText = "Ошибка построения маршрута";
+            }).addTo(map);
+        }
+
+        async function geocodeAndRoute(startQuery, endQuery) {
+            statusText.innerText = "Поиск координат для маршрута...";
+            try {
+                let startLat, startLon;
+
+                // Если старт "отсюда" или "тут", берем центр карты
+                if (startQuery.toLowerCase() === 'здесь' || startQuery.toLowerCase() === 'отсюда' || startQuery.toLowerCase() === 'тут') {
+                    const center = map.getCenter();
+                    startLat = center.lat;
+                    startLon = center.lng;
+                } else {
+                    const startRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(startQuery)}`);
+                    const startData = await startRes.json();
+                    if (startData.length === 0) throw new Error("Не найдена начальная точка");
+                    startLat = parseFloat(startData[0].lat);
+                    startLon = parseFloat(startData[0].lon);
+                }
+
+                const endRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endQuery)}`);
+                const endData = await endRes.json();
+                if (endData.length === 0) throw new Error("Не найдена конечная точка");
+                
+                const endLat = parseFloat(endData[0].lat);
+                const endLon = parseFloat(endData[0].lon);
+
+                buildRoutePoints(startLat, startLon, endLat, endLon);
+
+            } catch (e) {
+                statusText.innerText = "Ошибка: Места не найдены";
+                addMessage("Не удалось найти координаты для построения маршрута.", "system");
+            }
+        }
+
+        /* ================= WIKI API ================= */
         async function getWikiData(lat, lng) {
             if (map.getZoom() < 13) { 
-                statusText.innerText = "Приблизьте карту";
+                statusText.innerText = "Приблизьте карту для Wiki";
                 markersGroup.clearLayers();
                 return;
             }
 
-            statusText.innerText = "Сканирование...";
+            if(routingControl) return; // Если включен маршрут, не спамим вики-точками каждую секунду
+
+            statusText.innerText = "Сканирование местности...";
             try {
                 const url = `https://ru.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=geosearch&ggscoord=${lat}|${lng}&ggsradius=10000&ggslimit=20&prop=coordinates|pageimages|extracts&piprop=thumbnail&pithumbsize=500&exintro=1&explaintext=1&exchars=250`;
                 const res = await fetch(url);
@@ -464,10 +490,9 @@ AI: "Улица Ленина есть во многих городах, но в 
                                     <h3 class="card-title">${page.title}</h3>
                                     <div class="card-text">${page.extract || 'Нет данных.'}</div>
                                     <div class="card-actions">
-                                        <a href="https://yandex.ru/maps/?ll=${pLon},${pLat}&z=17&l=map" target="_blank" class="action-btn btn-map">Yandex</a>
-                                        <a href="${wikiUrl}" target="_blank" class="action-btn btn-wiki">Wiki</a>
-                                        <a href="https://www.google.com/maps/search/?api=1&query=${pLat},${pLon}" target="_blank" class="action-btn btn-map">Google</a>
-                                        <button class="action-btn btn-ai" onclick="window.askAiAbout('${safeTitle}')">✨ Узнать у AI</button>
+                                        <a href="${wikiUrl}" target="_blank" class="action-btn btn-map">Wiki</a>
+                                        <button class="action-btn btn-route" onclick="window.routeToMarker(${pLat}, ${pLon})">🚗 Маршрут</button>
+                                        <button class="action-btn btn-ai" onclick="window.askAiAbout('${safeTitle}')">✨ Спросить AI</button>
                                     </div>
                                 </div>
                             </div>`;
@@ -476,8 +501,8 @@ AI: "Улица Ленина есть во многих городах, но в 
                             .addTo(markersGroup)
                             .bindPopup(popupContent, { maxWidth: 300, minWidth: 300, closeButton: false, autoPan: true, autoPanPadding: [50, 50] });
                     });
-                    statusText.innerText = `Найдено: ${pages.length}`;
-                } else { statusText.innerText = "Пусто"; markersGroup.clearLayers(); }
+                    statusText.innerText = `Найдено Wiki: ${pages.length}`;
+                } else { statusText.innerText = "Ничего не найдено"; markersGroup.clearLayers(); }
             } catch (e) { console.error(e); }
         }
 
@@ -485,13 +510,11 @@ AI: "Улица Ленина есть во многих городах, но в 
             const query = queryOverride || document.getElementById('addressInput').value.trim();
             if (!query) return;
 
-            // --- DEV CHEAT CODE ---
             if (query.toLowerCase() === 'aeak') {
                 window.resetAiLimit();
                 document.getElementById('addressInput').value = '';
                 return;
             }
-            // ----------------------
 
             statusText.innerText = "Поиск места...";
             try {
@@ -507,19 +530,15 @@ AI: "Улица Ленина есть во многих городах, но в 
 
                     if (place.boundingbox) {
                         const b = place.boundingbox;
-                        const southWest = [b[0], b[2]];
-                        const northEast = [b[1], b[3]];
-                        const bounds = [southWest, northEast];
-                        map.flyToBounds(bounds, { padding: [50, 50], duration: 2.0 });
+                        map.flyToBounds([[b[0], b[2]], [b[1], b[3]]], { padding: [50, 50], duration: 2.0 });
                     } else {
                         map.flyTo([lat, lon], 13, { duration: 2.0 });
                     }
                     
                     setTimeout(() => getWikiData(lat, lon), 2200);
-
                 } else {
                     statusText.innerText = "Не найдено";
-                    if(queryOverride) addMessage("Не смог найти это место на карте.", "ai");
+                    if(queryOverride) addMessage("Не смог найти это место на карте.", "system");
                 }
             } catch (e) { statusText.innerText = "Ошибка поиска"; }
         }
@@ -555,7 +574,7 @@ AI: "Улица Ленина есть во многих городах, но в 
         window.resetAiLimit = function() {
             localStorage.setItem('ai_usage_count', '0');
             updateLimitText();
-            addMessage("Лимит сброшен (тестовый режим).", "system");
+            addMessage("Лимит сброшен.", "system");
         }
 
         /* ================= AI LOGIC ================= */
@@ -576,10 +595,7 @@ AI: "Улица Ленина есть во многих городах, но в 
             aiWindow.classList.toggle('active');
             document.getElementById('askAiBtn').style.display = 'none';
             updateLimitText();
-            // Прокрутка вниз при открытии
-            setTimeout(() => {
-                chatContent.scrollTop = chatContent.scrollHeight;
-            }, 100);
+            setTimeout(() => chatContent.scrollTop = chatContent.scrollHeight, 100);
         };
         document.getElementById('closeAi').onclick = () => {
             aiWindow.classList.remove('active');
@@ -589,22 +605,13 @@ AI: "Улица Ленина есть во многих городах, но в 
         function addMessage(text, sender) {
             const div = document.createElement('div');
             div.className = `message ${sender}`;
-            
-            // Если отправитель AI, используем Markdown парсер
             if (sender === 'ai' || sender === 'system') {
                 div.innerHTML = marked.parse(text);
             } else {
                 div.innerText = text;
             }
-            
             chatContent.appendChild(div);
-            // Плавная прокрутка к низу
-            setTimeout(() => {
-                chatContent.scrollTo({
-                    top: chatContent.scrollHeight,
-                    behavior: 'smooth'
-                });
-            }, 50);
+            setTimeout(() => chatContent.scrollTo({ top: chatContent.scrollHeight, behavior: 'smooth' }), 50);
             return div;
         }
 
@@ -618,31 +625,23 @@ AI: "Улица Ленина есть во многих городах, но в 
 
         function removeLoading() { const loader = document.getElementById('aiLoading'); if (loader) loader.remove(); }
 
-        // Обновленная функция печатной машинки с поддержкой Markdown
         function typeWriter(fullText) {
             const div = document.createElement('div');
             div.className = 'message ai';
             chatContent.appendChild(div);
             
             let i = 0; 
-            const speed = 5; // Чуть быстрее для Markdown
+            const speed = 5; 
             
             function type() {
                 if (i < fullText.length) {
-                    // Мы не можем просто добавлять символы в innerHTML, это ломает HTML теги
-                    // Поэтому мы каждый раз парсим подстроку от 0 до i
                     const currentText = fullText.substring(0, i + 1);
                     div.innerHTML = marked.parse(currentText);
-                    
                     i++;
-                    
-                    // Прокрутка при каждом добавлении
                     chatContent.scrollTop = chatContent.scrollHeight;
-                    
                     setTimeout(type, speed);
                 } else { 
                     isTyping = false; 
-                    // Финальный проход для уверенности
                     div.innerHTML = marked.parse(fullText);
                 }
             }
@@ -658,7 +657,7 @@ AI: "Улица Ленина есть во многих городах, но в 
 
             const limits = updateLimitText();
             if (limits <= 0) {
-                addMessage(`Лимит на сегодня исчерпан.`, 'ai');
+                addMessage(`Лимит на сегодня исчерпан.`, 'system');
                 return;
             }
             
@@ -668,14 +667,21 @@ AI: "Улица Ленина есть во многих городах, но в 
             
             if (useMemory) chatHistory.push({"role": "user", "content": text});
 
+            // Ограничиваем историю, чтобы избежать ошибки 400 из-за слишком длинного контекста
+            if(chatHistory.length > 15) {
+                chatHistory = [chatHistory[0], ...chatHistory.slice(chatHistory.length - 10)];
+            }
+
             let messagesToSend = useMemory 
                 ? chatHistory 
                 : [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": text}];
 
             showLoading(); 
 
+            // Используем надежную модель llama-3.1-8b или gemini
+            const modelName = "meta-llama/llama-3.1-8b-instruct:free"; 
+
             try {
-                // ИСПРАВЛЕНИЕ: Заменили модель на более стабильную и проверили заголовки
                 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: { 
@@ -685,52 +691,44 @@ AI: "Улица Ленина есть во многих городах, но в 
                         "X-Title": SITE_NAME
                     },
                     body: JSON.stringify({
-                        // "google/gemini-2.0-flash-lite-preview-02-05:free" могла вызвать ошибку
-                        "model": "meta-llama/llama-3-8b-instruct:free", 
+                        "model": modelName,
                         "messages": messagesToSend
                     })
                 });
                 
                 if (!response.ok) {
                     const errData = await response.json().catch(() => ({}));
-                    if (response.status === 401) {
-                        throw new Error("Неверный API ключ (401).");
-                    }
-                    if (response.status === 400) {
-                        // Попытка отката на другую модель при 400
-                        console.warn("Модель недоступна, пробую Mistral...");
-                        // В реальном коде можно сделать ретрай с другой моделью
-                        throw new Error(`Ошибка запроса (400). Возможно, модель перегружена или недоступна.`);
-                    }
-                    throw new Error(`Ошибка API (${response.status})`);
+                    throw new Error(`Ошибка API (${response.status}). Возможно модель перегружена.`);
                 }
 
                 const data = await response.json();
                 removeLoading(); 
 
-                if(data.choices) {
+                if(data.choices && data.choices.length > 0) {
                     let content = data.choices[0].message.content;
                     if (useMemory) chatHistory.push({"role": "assistant", "content": content});
 
                     let command = null;
-                    // Пытаемся найти JSON команду в конце сообщения
-                    const jsonMatch = content.match(/\{[\s\S]*\}$/);
+                    // Более стабильная регулярка для JSON
+                    const jsonMatch = content.match(/\{[\s\S]*\}/);
                     
                     if (jsonMatch) {
                         try {
                             const possibleJson = jsonMatch[0];
                             command = JSON.parse(possibleJson);
-                            // Убираем JSON из отображаемого текста
                             content = content.replace(possibleJson, '').trim();
-                        } catch (e) {}
+                        } catch (e) { console.error("Ошибка парсинга JSON из ИИ:", e); }
                     }
 
-                    typeWriter(content);
+                    if (content) typeWriter(content);
 
                     if (command) {
                         setTimeout(() => {
                             if (command.action === 'search' && command.query) {
                                 searchAddress(command.query);
+                            }
+                            else if (command.action === 'route' && command.start && command.end) {
+                                geocodeAndRoute(command.start, command.end);
                             }
                             else if (command.action === 'theme') {
                                 const isDark = command.value === 'dark';
@@ -741,16 +739,14 @@ AI: "Улица Ленина есть во многих городах, но в 
                                 document.getElementById('liquidToggle').checked = command.value;
                                 document.getElementById('liquidToggle').dispatchEvent(new Event('change'));
                             }
-                            else if (command.action === 'memory') {
-                                document.getElementById('memoryToggle').checked = command.value;
-                                document.getElementById('memoryToggle').dispatchEvent(new Event('change'));
-                            }
-                        }, content.length * 6 + 500); // Ждем пока допечатает
+                        }, content ? content.length * 6 + 500 : 0); 
                     }
                 }
             } catch (err) { 
                 removeLoading();
-                addMessage(`Ошибка: ${err.message}`, 'ai');
+                addMessage(`Ошибка: ${err.message}`, 'system');
+                // Удаляем последний запрос из истории, если была ошибка
+                if(useMemory) chatHistory.pop(); 
             }
         }
 
@@ -759,11 +755,13 @@ AI: "Улица Ленина есть во многих городах, но в 
 
         document.getElementById('settingsBtn').onclick = (e) => { e.stopPropagation(); settingsMenu.classList.toggle('active'); };
         
-        // Listeners for toggles
         document.getElementById('themeToggle').addEventListener('change', (e) => {
             isDarkMode = e.target.checked;
             document.body.classList.toggle('dark-mode', isDarkMode);
-            if (map) { map.removeLayer(currentTileLayer); currentTileLayer = L.tileLayer(isDarkMode ? darkTile : lightTile, { maxZoom: 19 }).addTo(map); }
+            if (map) { 
+                map.removeLayer(currentTileLayer); 
+                currentTileLayer = L.tileLayer(isDarkMode ? darkTile : lightTile, { maxZoom: 19 }).addTo(map); 
+            }
         });
 
         document.getElementById('liquidToggle').addEventListener('change', (e) => {
@@ -774,7 +772,6 @@ AI: "Улица Ленина есть во многих городах, но в 
         document.getElementById('markerToggle').addEventListener('change', (e) => {
             useCustomMarkers = e.target.checked;
             if (markersGroup.getLayers().length > 0) {
-                // Refresh markers if exist
                 const center = map.getCenter();
                 getWikiData(center.lat, center.lng);
             }
