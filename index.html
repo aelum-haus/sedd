@@ -360,7 +360,7 @@
     <script>
         /* ================= НАСТРОЙКИ ================= */
         // ВНИМАНИЕ: ЗАМЕНИТЕ ЭТОТ КЛЮЧ НА СВОЙ С OPENROUTER.AI (он начинается на sk-or-v1...)
-        const OPENROUTER_API_KEY = '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'; 
+        const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
         
         // Исправление для Referer: если location.href невалиден (например, blob/file), ставим заглушку
         const SITE_URL = (window.location.href && window.location.href.startsWith('http')) 
